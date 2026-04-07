@@ -36,6 +36,7 @@ struct RootTabBarView: View {
                 await NotificationManager.shared.configureMidnightShiftNotification()
             }
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
 
@@ -186,6 +187,8 @@ private extension RootTabBarView {
             InputScreenView()
         case .shop:
             ShopScreenView()
+        case .missions:
+            MissionsScreenView()
         case .stats:
             StatsScreenView()
         }
@@ -225,6 +228,9 @@ private extension RootTabBarView {
                         Text(tab.title)
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(selectedTab == tab ? Color.tabSelected : Color.tabUnselected)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                            .allowsTightening(true)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -242,6 +248,7 @@ private enum RootTab: String, CaseIterable, Identifiable {
     case console
     case input
     case shop
+    case missions
     case stats
 
     var id: String { rawValue }
@@ -254,6 +261,8 @@ private enum RootTab: String, CaseIterable, Identifiable {
             return "Input"
         case .shop:
             return "Shop"
+        case .missions:
+            return "Missions"
         case .stats:
             return "Stats"
         }
@@ -267,6 +276,8 @@ private enum RootTab: String, CaseIterable, Identifiable {
             return "inputTab"
         case .shop:
             return "shopTab"
+        case .missions:
+            return "missionsTab"
         case .stats:
             return "statsTab"
         }

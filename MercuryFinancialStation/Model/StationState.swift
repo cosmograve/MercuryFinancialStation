@@ -13,6 +13,10 @@ final class StationState {
     var hasFuseBoxAvailable: Bool
     var unlockedModuleIDsRaw: String?
     var purchasedUpgradeIDsRaw: String?
+    var reserveGoalTitle: String?
+    var reserveGoalTarget: Int?
+    var reserveSavedAmount: Int?
+    var monthlyMissionLimit: Int?
 
     init(
         key: String = "singleton",
@@ -24,7 +28,11 @@ final class StationState {
         lastProcessedDay: Date? = nil,
         hasFuseBoxAvailable: Bool = false,
         unlockedModuleIDsRaw: String? = nil,
-        purchasedUpgradeIDsRaw: String? = nil
+        purchasedUpgradeIDsRaw: String? = nil,
+        reserveGoalTitle: String? = nil,
+        reserveGoalTarget: Int? = nil,
+        reserveSavedAmount: Int? = 0,
+        monthlyMissionLimit: Int? = nil
     ) {
         self.key = key
         self.dailyLimit = dailyLimit
@@ -36,6 +44,10 @@ final class StationState {
         self.hasFuseBoxAvailable = hasFuseBoxAvailable
         self.unlockedModuleIDsRaw = unlockedModuleIDsRaw
         self.purchasedUpgradeIDsRaw = purchasedUpgradeIDsRaw
+        self.reserveGoalTitle = reserveGoalTitle
+        self.reserveGoalTarget = reserveGoalTarget
+        self.reserveSavedAmount = reserveSavedAmount
+        self.monthlyMissionLimit = monthlyMissionLimit
     }
 }
 

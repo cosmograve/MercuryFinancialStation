@@ -10,6 +10,7 @@ struct ConsoleScreenView: View {
 
     @State private var showInitializationOverlay = false
     @State private var draftLimit = 5000
+    @State private var shieldRotation: Double = 0
 
     private var station: StationState? {
         stationStates.first
@@ -112,11 +113,32 @@ private extension ConsoleScreenView {
     }
 
     var domeView: some View {
-        Image(domeAssetName)
-            .resizable()
-            .scaledToFit()
-            .frame(maxWidth: .infinity)
-            .frame(height: 190)
+        ZStack(alignment: .top) {
+            Image(domeAssetName)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .frame(height: 190)
+
+            Image(shieldAssetName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 68, height: 68)
+                .rotation3DEffect(
+                    .degrees(shieldRotation),
+                    axis: (x: 0, y: 1, z: 0),
+                    perspective: 0
+                )
+                .offset(y: -18)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+        .onAppear {
+            shieldRotation = 0
+            withAnimation(.linear(duration: 1).repeatForever(autoreverses: true)) {
+                shieldRotation = -87
+            }
+        }
     }
 
     var dailyLimitCard: some View {
@@ -424,6 +446,17 @@ private extension ConsoleScreenView {
             return "domeMedium"
         case .critical:
             return "domeCritical"
+        }
+    }
+
+    var shieldAssetName: String {
+        switch domeState {
+        case .stable:
+            return "shieldStable"
+        case .medium:
+            return "shieldMedium"
+        case .critical:
+            return "shieldCritical"
         }
     }
 

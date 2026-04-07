@@ -36,7 +36,19 @@ struct StatsScreenView: View {
                 title: "Statistics"
             )
 
-            if hasAnyData {
+            if selectedPeriod == .month {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        periodSelector
+                        monthTopStats
+                        monthTrendSection
+                        monthLossMapSection
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
+                }
+            } else if hasAnyData {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 14) {
                         periodSelector
@@ -51,7 +63,12 @@ struct StatsScreenView: View {
                     .padding(.bottom, 24)
                 }
             } else {
-                emptyState
+                VStack(spacing: 14) {
+                    periodSelector
+                    emptyState
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -137,6 +154,105 @@ private extension StatsScreenView {
         return periodSum
     }
 
+    var currentMonthStart: Date {
+        let components = calendar.dateComponents([.year, .month], from: now)
+        return calendar.date(from: components) ?? todayStart
+    }
+
+    var nextMonthStart: Date {
+        calendar.date(byAdding: .month, value: 1, to: currentMonthStart) ?? now
+    }
+
+    var currentMonthTransactions: [TransactionRecord] {
+        transactionRecords.filter { record in
+            record.createdAt >= currentMonthStart && record.createdAt < nextMonthStart
+        }
+    }
+
+    var currentMonthSummaries: [ShiftDaySummary] {
+        shiftSummaries.filter { summary in
+            summary.dayStart >= currentMonthStart && summary.dayStart < nextMonthStart
+        }
+    }
+
+    var monthPointsEarned: Int {
+        currentMonthSummaries.reduce(0) { $0 + $1.pointsDelta }
+    }
+
+    var monthBreachesValue: Int {
+        currentMonthSummaries.filter { $0.wasBreach }.count + currentDayBreach
+    }
+
+    var monthTotalEnergyUsed: Int {
+        let monthTransactionsSum = currentMonthTransactions.reduce(0) { $0 + $1.amount }
+        let correction = max(0, spentToday - todayTransactionsSum)
+        return monthTransactionsSum + correction
+    }
+
+    var monthWeekTotals: [Int] {
+        guard let dayRange = calendar.range(of: .day, in: .month, for: now) else {
+            return [0, 0, 0, 0]
+        }
+        let daysInMonth = max(1, dayRange.count)
+        let bucketSize = Double(daysInMonth) / 4.0
+        var buckets = [0, 0, 0, 0]
+
+        for record in currentMonthTransactions {
+            let day = max(1, calendar.component(.day, from: record.createdAt))
+            let index = min(3, Int(Double(day - 1) / bucketSize))
+            buckets[index] += record.amount
+        }
+
+        let correction = max(0, spentToday - todayTransactionsSum)
+        if correction > 0 {
+            let todayDay = max(1, calendar.component(.day, from: now))
+            let index = min(3, Int(Double(todayDay - 1) / bucketSize))
+            buckets[index] += correction
+        }
+
+        return buckets
+    }
+
+    var monthTrendMaxValue: Int {
+        let peak = max(monthWeekTotals.max() ?? 0, 2400)
+        let step = 600
+        return max(step, ((peak + step - 1) / step) * step)
+    }
+
+    var monthTrendTicks: [Int] {
+        let step = max(1, monthTrendMaxValue / 4)
+        return [0, 1, 2, 3, 4].map { monthTrendMaxValue - ($0 * step) }
+    }
+
+    var monthLossSlices: [MonthLossSlice] {
+        let definitions: [(id: String, title: String, color: Color)] = [
+            ("life", "Life Support", Color.dailyLimitAccent),
+            ("transport", "Transport", Color.tabSelected),
+            ("stims", "Stims & Toxins", Color(hex: "#F45AA1")),
+            ("data", "Data Stream", Color(hex: "#8D7DF3")),
+            ("entertainment", "Entertainment", Color(hex: "#45D39B"))
+        ]
+
+        let total = max(1, definitions.reduce(0) { partial, item in
+            partial + currentMonthTransactions
+                .filter { $0.moduleID == item.id }
+                .reduce(0) { $0 + $1.amount }
+        })
+
+        return definitions.map { item in
+            let amount = currentMonthTransactions
+                .filter { $0.moduleID == item.id }
+                .reduce(0) { $0 + $1.amount }
+            return MonthLossSlice(
+                id: item.id,
+                title: item.title,
+                color: item.color,
+                amount: amount,
+                ratio: Double(amount) / Double(total)
+            )
+        }
+    }
+
     var emptyState: some View {
         VStack {
             Spacer()
@@ -191,6 +307,263 @@ private extension StatsScreenView {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    var monthTopStats: some View {
+        HStack(spacing: 10) {
+            monthStatsChip(
+                iconName: "shield",
+                iconColor: Color.dailyLimitAccent,
+                title: "STREAK",
+                value: "\(stabilityStreak)",
+                subtitle: "DAYS",
+                valueColor: Color.dailyLimitAccent
+            )
+
+            monthStatsChip(
+                iconName: "exclamationmark.triangle",
+                iconColor: Color(hex: "#FB2C36"),
+                title: "BREACHES",
+                value: "\(monthBreachesValue)",
+                subtitle: "TOTAL",
+                valueColor: Color(hex: "#FB2C36")
+            )
+
+            monthStatsChip(
+                iconName: "bolt",
+                iconColor: Color.tabSelected,
+                title: "POINTS",
+                value: "\(monthPointsEarned)",
+                subtitle: "EARNED",
+                valueColor: Color.tabSelected
+            )
+        }
+    }
+
+    func monthStatsChip(
+        iconName: String,
+        iconColor: Color,
+        title: String,
+        value: String,
+        subtitle: String,
+        valueColor: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Image(systemName: iconName)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(iconColor)
+
+            Text(title)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Color.tabUnselected)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(value)
+                .font(.system(size: 31 / 2, weight: .bold))
+                .foregroundStyle(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(subtitle)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Color.tabUnselected)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.cardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.cardStroke, lineWidth: 1)
+        )
+    }
+
+    var monthTrendSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ENERGY CONSUMPTION TREND")
+                .font(.system(size: 31 / 2, weight: .regular))
+                .foregroundStyle(Color.tabUnselected)
+
+            monthTrendCard
+        }
+    }
+
+    var monthTrendCard: some View {
+        GeometryReader { geometry in
+            let leftInset: CGFloat = 46
+            let rightInset: CGFloat = 12
+            let topInset: CGFloat = 12
+            let bottomInset: CGFloat = 30
+            let plotWidth = max(1, geometry.size.width - leftInset - rightInset)
+            let plotHeight = max(1, geometry.size.height - topInset - bottomInset)
+            let maxY = max(1, monthTrendMaxValue)
+            let xStep = plotWidth / 3
+            let points = monthWeekTotals.enumerated().map { index, value in
+                CGPoint(
+                    x: leftInset + (CGFloat(index) * xStep),
+                    y: topInset + (plotHeight * (1 - (CGFloat(value) / CGFloat(maxY))))
+                )
+            }
+
+            ZStack {
+                ForEach(0..<monthTrendTicks.count, id: \.self) { idx in
+                    let y = topInset + (plotHeight * (CGFloat(idx) / CGFloat(max(monthTrendTicks.count - 1, 1))))
+                    Path { path in
+                        path.move(to: CGPoint(x: leftInset, y: y))
+                        path.addLine(to: CGPoint(x: leftInset + plotWidth, y: y))
+                    }
+                    .stroke(Color.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                }
+
+                ForEach(0..<4, id: \.self) { idx in
+                    let x = leftInset + (CGFloat(idx) * xStep)
+                    Path { path in
+                        path.move(to: CGPoint(x: x, y: topInset))
+                        path.addLine(to: CGPoint(x: x, y: topInset + plotHeight))
+                    }
+                    .stroke(Color.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                }
+
+                Path { path in
+                    guard let first = points.first else {
+                        return
+                    }
+                    path.move(to: first)
+                    for point in points.dropFirst() {
+                        path.addLine(to: point)
+                    }
+                }
+                .stroke(Color.dailyLimitAccent, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+
+                ForEach(0..<points.count, id: \.self) { idx in
+                    Circle()
+                        .fill(Color.dailyLimitAccent)
+                        .frame(width: 10, height: 10)
+                        .position(points[idx])
+                }
+
+                ForEach(0..<monthTrendTicks.count, id: \.self) { idx in
+                    let y = topInset + (plotHeight * (CGFloat(idx) / CGFloat(max(monthTrendTicks.count - 1, 1))))
+                    Text(monthChartDollar(monthTrendTicks[idx]))
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(Color.tabUnselected)
+                        .position(x: 18, y: y)
+                }
+
+                ForEach(0..<4, id: \.self) { idx in
+                    let x = leftInset + (CGFloat(idx) * xStep)
+                    Text("Week \(idx + 1)")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(Color.tabUnselected)
+                        .position(x: x, y: topInset + plotHeight + 14)
+                }
+            }
+        }
+        .frame(height: 170)
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(hex: "#12314E").opacity(0.55))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.dailyLimitAccent.opacity(0.20), lineWidth: 1)
+        )
+    }
+
+    var monthLossMapSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ENERGY LOSS MAP")
+                .font(.system(size: 31 / 2, weight: .regular))
+                .foregroundStyle(Color.tabUnselected)
+
+            VStack(spacing: 14) {
+                monthDonutChart
+                monthLossLegend
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(hex: "#132B46"))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.tabSelected.opacity(0.10),
+                                        Color.clear
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.tabSelected.opacity(0.60), lineWidth: 1)
+            )
+        }
+    }
+
+    var monthDonutChart: some View {
+        GeometryReader { geo in
+            let size = min(geo.size.width, geo.size.height)
+            let lineWidth = size * 0.24
+            let radius = (size - lineWidth) / 2
+            let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
+            let fallback = monthLossSlices.allSatisfy { $0.amount == 0 }
+            let slices = fallback
+                ? monthLossSlices.map { MonthLossSlice(id: $0.id, title: $0.title, color: $0.color.opacity(0.25), amount: 1, ratio: 1.0 / 5.0) }
+                : monthLossSlices
+
+            ZStack {
+                ForEach(0..<slices.count, id: \.self) { idx in
+                    let start = slices.prefix(idx).reduce(0.0) { $0 + $1.ratio }
+                    let end = start + slices[idx].ratio
+                    Path { path in
+                        path.addArc(
+                            center: center,
+                            radius: radius,
+                            startAngle: .degrees((start * 360) - 90),
+                            endAngle: .degrees((end * 360) - 90),
+                            clockwise: false
+                        )
+                    }
+                    .stroke(
+                        slices[idx].color,
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt, lineJoin: .round)
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(height: 170)
+    }
+
+    var monthLossLegend: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
+            ForEach(monthLossSlices) { slice in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(slice.color)
+                        .frame(width: 10, height: 10)
+
+                    Text("\(slice.title) (\(Int((slice.ratio * 100).rounded()))%)")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(Color.tabUnselected)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+        }
     }
 
     var topStats: some View {
@@ -453,6 +826,10 @@ private extension StatsScreenView {
     func dollar(_ value: Int) -> String {
         "$\(value.formatted(.number.grouping(.automatic)))"
     }
+
+    func monthChartDollar(_ value: Int) -> String {
+        "$\(value)"
+    }
 }
 
 private enum StatsPeriod: String, CaseIterable, Identifiable {
@@ -497,6 +874,14 @@ private struct DistributionRow: Identifiable {
     let id: String
     let emoji: String
     let name: String
+    let amount: Int
+    let ratio: Double
+}
+
+private struct MonthLossSlice: Identifiable {
+    let id: String
+    let title: String
+    let color: Color
     let amount: Int
     let ratio: Double
 }
